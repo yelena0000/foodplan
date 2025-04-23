@@ -51,3 +51,33 @@ class UserProfile(models.Model):
 
     def __str__(self):
         return self.user.username
+
+
+class Dish(models.Model):
+    name = models.CharField(max_length=150, verbose_name='Название блюда')
+    description = models.TextField(verbose_name='Описание блюда')
+    photo = models.ImageField(verbose_name='Фото блюда')
+    diet_type = models.ForeignKey(
+        DietType,
+        on_delete=models.SET_NULL,
+        null=True,
+        verbose_name='Тип диеты'
+    )
+    # dish_type = models. выбор из 4 вариантов
+
+    def __str__(self):
+        return self.name
+
+
+class Ingredient(models.Model):
+    name = models.CharField(max_length=150, verbose_name='Название блюда')
+    allergens = models.ManyToManyField(
+        Allergy,
+        blank=True,
+        verbose_name='Аллергены'
+    )
+    price = models.DecimalField(
+        max_digits=10, decimal_places=2,
+        verbose_name='Стоимость'
+    )
+    callories = models.IntegerField(verbose_name='Калорийность')
