@@ -53,24 +53,15 @@ class UserProfile(models.Model):
         return self.user.username
 
 
-class Dish(models.Model):
-    name = models.CharField(max_length=150, verbose_name='Название блюда')
-    description = models.TextField(verbose_name='Описание блюда')
-    photo = models.ImageField(verbose_name='Фото блюда')
-    diet_type = models.ForeignKey(
-        DietType,
-        on_delete=models.SET_NULL,
-        null=True,
-        verbose_name='Тип диеты'
-    )
-    # dish_type = models. выбор из 4 вариантов
-
-    def __str__(self):
-        return self.name
-
-
 class Ingredient(models.Model):
-    name = models.CharField(max_length=150, verbose_name='Название блюда')
+    UNIT_CHOICES = [
+        ('g', 'Граммы'),
+        ('ml', 'Миллилитры'),
+        ('pcs', 'Штуки'),
+        ('tbsp', 'Столовые ложки'),
+        ('tsp', 'Чайные ложки'),
+    ]
+    name = models.CharField(max_length=150, verbose_name='Название ингредиента')
     allergens = models.ManyToManyField(
         Allergy,
         blank=True,
@@ -78,6 +69,78 @@ class Ingredient(models.Model):
     )
     price = models.DecimalField(
         max_digits=10, decimal_places=2,
-        verbose_name='Стоимость'
+        verbose_name='Стоимость за единицу'
     )
-    callories = models.IntegerField(verbose_name='Калорийность')
+    callories = models.DecimalField(
+        max_digits=7,
+        decimal_places=2,
+        verbose_name='Калорийность'
+    )
+    unit = models.CharField(
+        max_length=10,
+        choices=UNIT_CHOICES,
+        default='g',
+        verbose_name='Единица измерения'
+    )
+
+    def __str__(self):
+        return f'{self.name} ({self.get_unit_display()})'
+
+
+class Dish(models.Model):
+    DISH_CATEGORY_CHOICES = [
+        ('breakfast', 'Завтрак'),
+        ('lunch', 'Обед'),
+        ('dinner', 'Ужин'),
+        ('dessert', 'Десерт')
+    ]
+    name = models.CharField(max_length=150, verbose_name='Название блюда')
+    description = models.TextField(verbose_name='Описание блюда')
+    photo = models.ImageField(verbose_name='Фото блюда')
+    diet_type = models.ForeignKey(
+        DietType,
+        on_delete=models.SET_NULL,
+        null=True,
+        verbose_name='Тип меню'
+    )
+    ingredients = models.ManyToManyField(
+        Ingredient,
+        through='DishIngredient',
+        verbose_name='Ингредиенты'
+    )
+    category = models.CharField(
+        max_length=50,
+        choices=DISH_CATEGORY_CHOICES,
+        verbose_name='Категория блюда',
+        default='lunch'
+    )
+
+    @property
+    def total_price(self):
+        """Считаем общую стоимость блюда"""
+        return sum(
+            di.quantity * di.ingredient.price
+            for di in self.dishingredient_set.all()
+        )
+
+    @property
+    def total_calories(self):
+        return sum(
+            di.quantity * di.ingredient.callories
+            for di in self.dishingredient_set.all()
+        )
+
+    def __str__(self):
+        return self.name
+
+
+class DishIngredient(models.Model):
+    dish = models.ForeignKey(Dish, on_delete=models.CASCADE)
+    ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE)
+    quantity = models.DecimalField(
+        max_digits=10, decimal_places=2,
+        verbose_name='Количество'
+    )
+
+    def __str__(self):
+        return f'{self.ingredient} - {self.quantity}'
