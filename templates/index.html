@@ -17,7 +17,9 @@
                 <a class="navbar-brand" href="{% url 'index' %}">
                     <img src="{% static 'img/logo.8d8f24edbb5f.svg' %}" height="55" width="189" alt="">
                 </a>
-                <button class="btn shadow-none btn-outline-success foodplan_green foodplan__border_green">Войти</button>
+                <a href="{% url 'auth' %}?next={% url 'lk' %}" class="btn shadow-none btn-outline-success foodplan_green foodplan__border_green">
+                    Войти
+                </a>
             </div>
         </nav>
     </header>
@@ -31,7 +33,9 @@
                             Вы получаете рецепты + список продуктов.<br>
                             Больше не нужно думать, что готовить.</h4>
                         <div class="d-block mt-3">
-                            <button class="btn shadow-none btn-outline-success foodplan_green foodplan__border_green">Хочу попробовать</button>
+                            <a href="{% if user.is_authenticated %}{% url 'order' %}{% else %}{% url 'auth' %}?next={% url 'order' %}{% endif %}" class="btn shadow-none btn-outline-success foodplan_green foodplan__border_green">
+                                Хочу попробовать
+                            </a>
                         </div>
                     </div>
                 </div>
