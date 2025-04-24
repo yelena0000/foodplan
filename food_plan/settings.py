@@ -85,6 +85,8 @@ AUTHENTICATION_BACKENDS = [
     'django.contrib.auth.backends.ModelBackend',
 ]
 
+LOGIN_URL = '/auth/'
+
 
 LANGUAGE_CODE = 'en-us'
 
@@ -101,3 +103,8 @@ STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static')]
 
 
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
+
+
+SESSION_COOKIE_SECURE = False  # Для разработки можно False, для продакшена True
+SESSION_COOKIE_HTTPONLY = True
+CSRF_COOKIE_SECURE = False  # Для разработки можно False, для продакшена True

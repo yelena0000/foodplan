@@ -30,24 +30,41 @@ class UserProfile(models.Model):
         DietType,
         on_delete=models.SET_NULL,
         null=True,
+        blank=True,
         verbose_name='Тип диеты'
     )
     budget_limit = models.DecimalField(
-        max_digits=10, decimal_places=2,
+        max_digits=10,
+        decimal_places=2,
+        null=True,
+        blank=True,
         verbose_name='Ограничение по стоимости'
     )
-
     count_of_persons = models.IntegerField(
         default=1,
         verbose_name='Количество персон'
     )
-    breakfast = models.BooleanField(verbose_name='Завтрак')
-    lunch = models.BooleanField(verbose_name='Обед')
-    dinner = models.BooleanField(verbose_name='Ужин')
-    dessert = models.BooleanField(verbose_name='Десерт')
+    breakfast = models.BooleanField(
+        default=True,
+        verbose_name='Завтрак'
+    )
+    lunch = models.BooleanField(
+        default=True,
+        verbose_name='Обед'
+    )
+    dinner = models.BooleanField(
+        default=True,
+        verbose_name='Ужин'
+    )
+    dessert = models.BooleanField(
+        default=False,
+        verbose_name='Десерт'
+    )
     subscription_end_date = models.DateField(
+        null=True,
+        blank=True,
         verbose_name='Дата окончания подписки'
-    )  # при подсчёте тарифа прибавляем дни к конечной дате
+    )
 
     def __str__(self):
         return self.user.username
