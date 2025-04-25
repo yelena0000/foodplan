@@ -63,6 +63,9 @@
                                 <li class="nav-item foodplan__tab-item">
                                     <button id="tab2" class="btn shadow-none foodplan__tab-button" data-bs-toggle="tab" data-bs-target="#menu">Моё меню</button>
                                 </li>
+                                <li class="nav-item foodplan__tab-item">
+                                    <button id="tab3" class="btn shadow-none foodplan__tab-button" data-bs-toggle="tab" data-bs-target="#subscription">Моя подписка</button>
+                                </li>
                                 <li class="nav-item foodplan__tab-item flex-grow-1"></li>
                             </ul>
                             <div class="tab-content mt-2">
@@ -78,20 +81,19 @@
                                         </div>
 
                                         <div class="mb-3">
+                                            {{ form.last_name.label_tag }}
+                                            {{ form.last_name }}
+                                            {{ form.last_name.errors }}
+                                        </div>
+
+                                        <div class="mb-3">
                                             {{ form.email.label_tag }}
                                             {{ form.email }}
                                             {{ form.email.errors }}
                                         </div>
 
-                                        <div class="mb-3">
-                                            {{ form.diet_type.label_tag }}
-                                            {{ form.diet_type }}
-                                            {{ form.diet_type.errors }}
-                                        </div>
-
                                         <button type="submit" class="btn btn-primary">Сохранить</button>
                                     </form>
-
                                 </div>
                                 <div class="tab-pane fade" id="menu">
                                     <!-- Завтрак -->
@@ -183,6 +185,35 @@
                                             {% endif %}
                                         </div>
                                     {% endif %}
+                                </div>
+
+                                <div class="tab-pane fade" id="subscription">
+                                    <div class="mb-3">
+                                        <h4>Информация о подписке</h4>
+                                        <div class="card">
+                                            <div class="card-body">
+                                                <h5 class="card-title">Тип меню: {{ profile.diet_type.name }}</h5>
+                                                <p class="card-text">
+                                                    <strong>Дата окончания:</strong> {{ profile.subscription_end_date|date:"d.m.Y" }}<br>
+                                                    <strong>Включенные приёмы пищи:</strong><br>
+                                                    {% if profile.breakfast %}Завтрак<br>{% endif %}
+                                                    {% if profile.lunch %}Обед<br>{% endif %}
+                                                    {% if profile.dinner %}Ужин<br>{% endif %}
+                                                    {% if profile.dessert %}Десерт<br>{% endif %}
+                                                    <strong>Количество персон:</strong> {{ profile.count_of_persons }}<br>
+                                                    <strong>Аллергии:</strong>
+                                                    {% if profile.allergies.exists %}
+                                                        {% for allergy in profile.allergies.all %}
+                                                            {{ allergy.name }}{% if not forloop.last %}, {% endif %}
+                                                        {% endfor %}
+                                                    {% else %}
+                                                        Нет
+                                                    {% endif %}
+                                                </p>
+                                                <a href="{% url 'order' %}" class="btn btn-primary">Продлить подписку</a>
+                                            </div>
+                                        </div>
+                                    </div>
                                 </div>
                             </div>
 

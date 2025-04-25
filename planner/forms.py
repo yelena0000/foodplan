@@ -5,9 +5,9 @@ from .models import UserProfile, DietType
 
 
 class LoginForm(forms.Form):
-    email = forms.EmailField(
-        label="Email",
-        widget=forms.EmailInput(attrs={'class': 'form-control'})
+    username = forms.CharField(
+        label="Логин",
+        widget=forms.TextInput(attrs={'class': 'form-control'})
     )
     password = forms.CharField(
         label="Пароль",
@@ -61,6 +61,11 @@ class UserProfileForm(forms.ModelForm):
         required=False,
         widget=forms.TextInput(attrs={'class': 'form-control'})
     )
+    last_name = forms.CharField(
+        label="Фамилия",
+        required=False,
+        widget=forms.TextInput(attrs={'class': 'form-control'})
+    )
     email = forms.EmailField(
         label="Email",
         required=True,
@@ -69,15 +74,13 @@ class UserProfileForm(forms.ModelForm):
 
     class Meta:
         model = UserProfile
-        fields = ['diet_type']
-        widgets = {
-            'diet_type': forms.Select(attrs={'class': 'form-select'}),
-        }
+        fields = []
 
     def __init__(self, *args, **kwargs):
         user = kwargs.pop('user')
         super().__init__(*args, **kwargs)
         self.fields['first_name'].initial = user.first_name
+        self.fields['last_name'].initial = user.last_name
         self.fields['email'].initial = user.email
 
     def save(self, commit=True):
@@ -85,6 +88,7 @@ class UserProfileForm(forms.ModelForm):
         user = self.instance.user
 
         user.first_name = self.cleaned_data['first_name']
+        user.last_name = self.cleaned_data['last_name']
         user.email = self.cleaned_data['email']
 
         if commit:

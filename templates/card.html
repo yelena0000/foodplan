@@ -9,7 +9,7 @@
     <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.0.2/dist/css/bootstrap.min.css" rel="stylesheet"
         integrity="sha384-EVSTQN3/azprG1Anm3QDgpJLIm9Nao0Yz1ztcQTwFspd3yD65VohhpuuCOmLASjC" crossorigin="anonymous">
     <link rel="stylesheet" href="{% static 'css/style.css' %}">
-    <title>План питания на неделю, меню, рецепты, список покупок. Классическое меню, безуглеводное меню</title>
+    <title>{{ dish.name }} - рецепт</title>
 </head>
 <body>
     <header>
@@ -18,13 +18,12 @@
                 <a class="navbar-brand" href="{% url 'index' %}">
                     <img src="{% static 'img/logo.8d8f24edbb5f.svg' %}" height="55" width="189" alt="">
                 </a>
-                <button class="btn btn-outline-success me-2 shadow-none foodplan_green foodplan__border_green">Назад</button>
+                <a href="{% url 'lk' %}" class="btn btn-outline-success me-2 shadow-none foodplan_green foodplan__border_green">Назад</a>
             </div>
         </nav>
     </header>
     <main style="margin-top: calc(2rem + 75px);">
         <section>
-            <!-- card.html -->
             <div class="container">
                 <div class="row">
                     <div class="col-12 col-md-4 d-flex justify-content-center">
@@ -35,8 +34,15 @@
                     <div class="col-12 col-md-8 d-flex flex-column justify-content-between">
                         <div class="row">
                             <h2>{{ dish.name }}</h2>
-                            <div class="col-12 col-sm-6">
-                                <h6>{{ dish.description }}</h6>
+                            <div class="col-12">
+                                <h5>Рецепт:</h5>
+                                <div class="card mb-3">
+                                    <div class="card-body">
+                                        {% for line in dish.recipe.splitlines %}
+                                            <p class="card-text">{{ line }}</p>
+                                        {% endfor %}
+                                    </div>
+                                </div>
                             </div>
                             <div class="col-12 col-sm-6">
                                 <small class="link-secondary">Ингредиенты:</small>
@@ -48,6 +54,10 @@
                                     {% endfor %}
                                 </ul>
                                 <small class="link-secondary">Общая калорийность: {{ dish.total_calories|floatformat }} ккал</small>
+                            </div>
+                            <div class="col-12 col-sm-6">
+                                <small class="link-secondary">Тип меню: {{ dish.diet_type.name }}</small><br>
+                                <small class="link-secondary">Категория: {{ dish.get_category_display }}</small>
                             </div>
                         </div>
                     </div>
@@ -81,3 +91,4 @@
         integrity="sha384-MrcW6ZMFYlzcLA8Nl+NtUVF0sA7MsXsP1UyJoMp4YLEuNSfAP+JcXn/tWtIaxVXM"
         crossorigin="anonymous"></script>
 </body>
+</html>
