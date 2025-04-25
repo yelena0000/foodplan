@@ -68,7 +68,7 @@ body {
 }
 
 .foodplan__head_bg {
-    background-image: url(img/head-bg.png);
+    background-image: url("../img/head-bg.png");
     background-repeat: no-repeat;
     background-position: right;
     background-size: contain;

@@ -1,23 +1,36 @@
-from django.shortcuts import render, redirect, get_object_or_404
-from django.contrib.auth import authenticate, login, logout, get_user_model
+from datetime import timedelta
+import random
+
+from django.contrib import messages
+from django.contrib.auth import (
+    authenticate,
+    get_user_model,
+    login,
+    logout,
+)
 from django.contrib.auth.decorators import login_required
 from django.contrib.auth.models import User
-from django.contrib import messages
 from django.db.models import Q
-from django.views.decorators.http import require_POST
+from django.shortcuts import (
+    get_object_or_404,
+    redirect,
+    render,
+)
 from django.utils import timezone
-import random
-from datetime import timedelta
+from django.views.decorators.http import require_POST
 
 from .forms import LoginForm, RegisterForm, UserProfileForm
-from .models import UserProfile, DietType, Dish, Allergy
+from .models import Allergy, DietType, Dish, UserProfile
 
 
 User = get_user_model()
 
 
 def index(request):
-    return render(request, 'index.html')
+    context = {
+        'current_date': timezone.now().date()
+    }
+    return render(request, 'index.html', context)
 
 
 def auth(request):
@@ -77,21 +90,33 @@ def lk_view(request):
     dishes_by_category = {}
 
     if categories:
-        # Получаем все подходящие блюда
+        # Базовый запрос с фильтрацией по типу диеты и категории
         dishes = Dish.objects.filter(
             diet_type=profile.diet_type,
             category__in=categories
         ).distinct()
 
-        # Исключаем блюда с аллергенами пользователя
+        # Фильтрация по аллергенам
         if profile.allergies.exists():
             dishes = dishes.exclude(
                 ingredients__allergens__in=profile.allergies.all()
             ).distinct()
 
+        # Фильтрация по бюджету (если указан)
+        if profile.budget_limit:
+            # Фильтруем блюда, где общая стоимость <= бюджета
+            dishes = [dish for dish in dishes if dish.total_price <= profile.budget_limit]
+
+            # Если после фильтрации нет блюд - показываем сообщение
+            if not dishes:
+                messages.info(request,
+                              f"Не найдено блюд в рамках вашего бюджета ({profile.budget_limit} руб/день). "
+                              "Попробуйте увеличить бюджет."
+                              )
+
         # Группируем блюда по категориям
         for category in categories:
-            category_dishes = dishes.filter(category=category)
+            category_dishes = [d for d in dishes if d.category == category]
             dishes_by_category[f"{category}_dishes"] = category_dishes
 
     context = {
@@ -193,7 +218,7 @@ def update_profile(request):
 
     return redirect('lk')
 
-# Это точно нужно еще пересмотреть
+
 @login_required
 @require_POST
 def process_order(request):
