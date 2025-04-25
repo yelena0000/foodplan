@@ -176,3 +176,4 @@ cython_debug/
 *.json
 
 .idea
+load_data.py
