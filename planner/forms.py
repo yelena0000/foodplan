@@ -71,10 +71,17 @@ class UserProfileForm(forms.ModelForm):
         required=True,
         widget=forms.EmailInput(attrs={'class': 'form-control'})
     )
+    budget_limit = forms.DecimalField(
+        label='Бюджет на день (руб)',
+        required=False,
+        widget=forms.NumberInput(attrs={
+            'class': 'form-control',
+        })
+    )
 
     class Meta:
         model = UserProfile
-        fields = []
+        fields = ['budget_limit']
 
     def __init__(self, *args, **kwargs):
         user = kwargs.pop('user')

@@ -114,7 +114,7 @@ class Dish(models.Model):
     name = models.CharField(max_length=150, verbose_name='Название блюда')
     description = models.TextField(verbose_name='Описание блюда')
     recipe = models.TextField(verbose_name='Рецепт приготовления', blank=True, default='')
-    photo = models.ImageField(verbose_name='Фото блюда')
+    photo = models.ImageField(verbose_name='Фото блюда', blank=True, null=True , upload_to='dishes/')
     diet_type = models.ForeignKey(
         DietType,
         on_delete=models.SET_NULL,
