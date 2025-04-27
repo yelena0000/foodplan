@@ -78,10 +78,18 @@ class UserProfileForm(forms.ModelForm):
             'class': 'form-control',
         })
     )
+    avatar = forms.ImageField(
+        label='Аватар',
+        required=False,
+        widget=forms.FileInput(attrs={
+            'class': 'form-control d-none',
+            'id': 'avatar-upload'
+        })
+    )
 
     class Meta:
         model = UserProfile
-        fields = ['budget_limit']
+        fields = ['budget_limit', 'avatar']
 
     def __init__(self, *args, **kwargs):
         user = kwargs.pop('user')

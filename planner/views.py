@@ -48,10 +48,22 @@ def registration(request):
 def dish_card(request, dish_id):
     dish = get_object_or_404(Dish, id=dish_id)
     ingredients = dish.dishingredient_set.all()
+    profile = request.user.userprofile
+
+    # Умножаем количество каждого ингредиента на количество персон
+    adjusted_ingredients = []
+    for ingredient in ingredients:
+        adjusted_quantity = float(ingredient.quantity) * profile.count_of_persons
+        adjusted_ingredients.append({
+            'ingredient': ingredient.ingredient,
+            'quantity': adjusted_quantity,
+            'unit': ingredient.ingredient.get_unit_display()
+        })
 
     context = {
         'dish': dish,
-        'ingredients': ingredients,
+        'ingredients': adjusted_ingredients,
+        'profile': profile,
     }
     return render(request, 'card.html', context)
 
@@ -102,21 +114,30 @@ def lk_view(request):
                 ingredients__allergens__in=profile.allergies.all()
             ).distinct()
 
+        # Рассчитываем стоимость с учетом количества персон
+        adjusted_dishes = []
+        for dish in dishes:
+            # Создаем копию блюда с дополнительными атрибутами
+            dish.adjusted_price = dish.total_price * profile.count_of_persons
+            dish.adjusted_calories = dish.total_calories * profile.count_of_persons
+            adjusted_dishes.append(dish)
+
         # Фильтрация по бюджету (если указан)
         if profile.budget_limit:
-            # Фильтруем блюда, где общая стоимость <= бюджета
-            dishes = [dish for dish in dishes if dish.total_price <= profile.budget_limit]
+            # Фильтруем блюда, где общая стоимость с учетом персон <= бюджета
+            adjusted_dishes = [dish for dish in adjusted_dishes
+                             if dish.adjusted_price <= profile.budget_limit]
 
             # Если после фильтрации нет блюд - показываем сообщение
-            if not dishes:
+            if not adjusted_dishes:
                 messages.info(request,
-                              f"Не найдено блюд в рамках вашего бюджета ({profile.budget_limit} руб/день). "
-                              "Попробуйте увеличить бюджет."
-                              )
+                            f"Не найдено блюд в рамках вашего бюджета ({profile.budget_limit} руб/день). "
+                            "Попробуйте увеличить бюджет."
+                            )
 
         # Группируем блюда по категориям
         for category in categories:
-            category_dishes = [d for d in dishes if d.category == category]
+            category_dishes = [d for d in adjusted_dishes if d.category == category]
             dishes_by_category[f"{category}_dishes"] = category_dishes
 
     context = {
@@ -209,13 +230,26 @@ def update_profile(request):
     user = request.user
     profile = user.userprofile
 
-    form = UserProfileForm(request.POST, instance=profile, user=user)
+    form = UserProfileForm(request.POST, request.FILES, instance=profile, user=user)
     if form.is_valid():
         form.save()
         messages.success(request, 'Профиль обновлён!')
     else:
         messages.error(request, 'Ошибка при обновлении профиля.')
 
+    return redirect('lk')
+
+
+@login_required
+@require_POST
+def update_avatar(request):
+    profile = request.user.userprofile
+    if 'avatar' in request.FILES:
+        profile.avatar = request.FILES['avatar']
+        profile.save()
+        messages.success(request, 'Аватар успешно обновлен!')
+    else:
+        messages.error(request, 'Не удалось загрузить аватар')
     return redirect('lk')
 
 
