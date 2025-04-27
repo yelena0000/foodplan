@@ -77,73 +77,56 @@ def lk_view(request):
         messages.error(request, "Профиль пользователя не найден")
         return redirect('index')
 
-    # Проверка подписки
-    if not profile.subscription_end_date or profile.subscription_end_date < timezone.now().date():
-        messages.warning(request, "Ваша подписка истекла или не оформлена!")
-        return redirect('order')
-
-    if not profile.diet_type:
-        messages.warning(request, "Выберите тип диеты в настройках профиля")
-        return redirect('update_profile')
-
-    form = UserProfileForm(instance=profile, user=user)
-
-    # Получаем выбранные категории
-    categories = []
-    if profile.breakfast:
-        categories.append('breakfast')
-    if profile.lunch:
-        categories.append('lunch')
-    if profile.dinner:
-        categories.append('dinner')
-    if profile.dessert:
-        categories.append('dessert')
-
+    # Проверка активности подписки
+    subscription_active = profile.subscription_end_date and profile.subscription_end_date >= timezone.now().date()
     dishes_by_category = {}
 
-    if categories:
-        # Базовый запрос с фильтрацией по типу диеты и категории
-        dishes = Dish.objects.filter(
-            diet_type=profile.diet_type,
-            category__in=categories
-        ).distinct()
+    if subscription_active and profile.diet_type:
+        # Логика фильтрации блюд только если подписка активна и выбран тип диеты
+        categories = []
+        if profile.breakfast:
+            categories.append('breakfast')
+        if profile.lunch:
+            categories.append('lunch')
+        if profile.dinner:
+            categories.append('dinner')
+        if profile.dessert:
+            categories.append('dessert')
 
-        # Фильтрация по аллергенам
-        if profile.allergies.exists():
-            dishes = dishes.exclude(
-                ingredients__allergens__in=profile.allergies.all()
+        if categories:
+            dishes = Dish.objects.filter(
+                diet_type=profile.diet_type,
+                category__in=categories
             ).distinct()
 
-        # Рассчитываем стоимость с учетом количества персон
-        adjusted_dishes = []
-        for dish in dishes:
-            # Создаем копию блюда с дополнительными атрибутами
-            dish.adjusted_price = dish.total_price * profile.count_of_persons
-            dish.adjusted_calories = dish.total_calories * profile.count_of_persons
-            adjusted_dishes.append(dish)
+            if profile.allergies.exists():
+                dishes = dishes.exclude(
+                    ingredients__allergens__in=profile.allergies.all()
+                ).distinct()
 
-        # Фильтрация по бюджету (если указан)
-        if profile.budget_limit:
-            # Фильтруем блюда, где общая стоимость с учетом персон <= бюджета
-            adjusted_dishes = [dish for dish in adjusted_dishes
-                             if dish.adjusted_price <= profile.budget_limit]
+            # Рассчитываем стоимость с учетом количества персон
+            adjusted_dishes = []
+            for dish in dishes:
+                dish.adjusted_price = dish.total_price * profile.count_of_persons
+                dish.adjusted_calories = dish.total_calories * profile.count_of_persons
+                adjusted_dishes.append(dish)
 
-            # Если после фильтрации нет блюд - показываем сообщение
-            if not adjusted_dishes:
-                messages.info(request,
-                            f"Не найдено блюд в рамках вашего бюджета ({profile.budget_limit} руб/день). "
-                            "Попробуйте увеличить бюджет."
-                            )
+            if profile.budget_limit:
+                adjusted_dishes = [dish for dish in adjusted_dishes
+                                   if dish.adjusted_price <= profile.budget_limit]
 
-        # Группируем блюда по категориям
-        for category in categories:
-            category_dishes = [d for d in adjusted_dishes if d.category == category]
-            dishes_by_category[f"{category}_dishes"] = category_dishes
+            # Группируем блюда по категориям
+            for category in categories:
+                category_dishes = [d for d in adjusted_dishes if d.category == category]
+                dishes_by_category[f"{category}_dishes"] = category_dishes
+
+    form = UserProfileForm(instance=profile, user=user)
 
     context = {
         'form': form,
         'profile': profile,
         'user': user,
+        'subscription_active': subscription_active,
         **dishes_by_category
     }
 

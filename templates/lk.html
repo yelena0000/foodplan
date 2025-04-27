@@ -108,6 +108,14 @@
                                     </form>
                                 </div>
                                 <div class="tab-pane fade" id="menu">
+                                    {% if not subscription_active %}
+                                        <div class="alert alert-warning mb-4">
+                                            <h4>Ваша подписка неактивна</h4>
+                                            <p>Для просмотра доступных блюд необходимо оформить подписку.</p>
+                                            <a href="{% url 'order' %}" class="btn btn-primary">Оформить подписку</a>
+                                        </div>
+                                    {% endif %}
+
                                     <!-- Завтрак -->
                                     <div class="mb-4">
                                         <h3>Завтрак</h3>
@@ -215,6 +223,13 @@
                                 <div class="tab-pane fade" id="subscription">
                                     <div class="mb-3">
                                         <h4>Информация о подписке</h4>
+                                        {% if not subscription_active %}
+                                            <div class="alert alert-warning">
+                                                <h5>Подписка истекла или не оформлена!</h5>
+                                                <p>Для доступа к полному функционалу сервиса необходимо оформить подписку.</p>
+                                            </div>
+                                        {% endif %}
+
                                         <div class="card">
                                             <div class="card-body">
                                                 <h5 class="card-title">Тип меню: {{ profile.diet_type.name }}</h5>
