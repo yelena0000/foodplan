@@ -16,16 +16,74 @@ class DietType(models.Model):
         return self.name
 
 
+class SubscriptionOrder(models.Model):
+    user = models.ForeignKey(
+        User,
+        on_delete=models.CASCADE,
+        verbose_name='Пользователь'
+    )
+    amount = models.DecimalField(
+        max_digits=10,
+        decimal_places=2,
+        verbose_name='Сумма заказа'
+    )
+    description = models.CharField(
+        max_length=255,
+        verbose_name='Описание подписки'
+    )
+    status = models.CharField(
+        max_length=20,
+        choices=[
+            ('pending', 'Ожидает оплаты'),
+            ('paid', 'Оплачен'),
+            ('failed', 'Не удался')
+        ],
+        default='pending',
+        verbose_name='Статус'
+    )
+    payment_id = models.CharField(
+        max_length=255,
+        null=True,
+        blank=True,
+        verbose_name='ID платежа'
+    )
+    created_at = models.DateTimeField(
+        auto_now_add=True,
+        verbose_name='Дата создания'
+    )
+    subscription_params = models.JSONField(
+        default=dict,
+        verbose_name='Параметры подписки'
+    )
+    payment_data = models.JSONField(
+        null=True,
+        blank=True,
+        verbose_name='Данные платежа'
+    )
+
+    @property
+    def is_active(self):
+        return self.status == 'paid' and (
+            self.user.userprofile.subscription_end_date >= timezone.now().date()
+            if hasattr(self.user, 'userprofile') and self.user.userprofile.subscription_end_date
+            else False
+        )
+
+    def __str__(self):
+        return f"Заказ #{self.id} - {self.get_status_display()}"
+
+
 class UserProfile(models.Model):
     user = models.OneToOneField(
-        User, on_delete=models.CASCADE,
+        User,
+        on_delete=models.CASCADE,
         verbose_name='Пользователь'
     )
     allergies = models.ManyToManyField(
         Allergy,
         blank=True,
         verbose_name='Аллергии'
-    )    
+    )
     diet_type = models.ForeignKey(
         DietType,
         on_delete=models.SET_NULL,
@@ -68,8 +126,15 @@ class UserProfile(models.Model):
     avatar = models.ImageField(
         verbose_name='Аватар',
         upload_to='avatars/',
+        null=True, blank=True
+    )
+
+    active_subscription = models.ForeignKey(
+        SubscriptionOrder,
         null=True,
-        blank=True
+        blank=True,
+        on_delete=models.SET_NULL,
+        verbose_name='Активная подписка'
     )
 
     def __str__(self):
@@ -84,7 +149,10 @@ class Ingredient(models.Model):
         ('tbsp', 'Столовые ложки'),
         ('tsp', 'Чайные ложки'),
     ]
-    name = models.CharField(max_length=150, verbose_name='Название ингредиента')
+    name = models.CharField(
+        max_length=150,
+        verbose_name='Название ингредиента'
+    )
     allergens = models.ManyToManyField(
         Allergy,
         blank=True,
@@ -117,10 +185,24 @@ class Dish(models.Model):
         ('dinner', 'Ужин'),
         ('dessert', 'Десерт')
     ]
-    name = models.CharField(max_length=150, verbose_name='Название блюда')
-    description = models.TextField(verbose_name='Описание блюда')
-    recipe = models.TextField(verbose_name='Рецепт приготовления', blank=True, default='')
-    photo = models.ImageField(verbose_name='Фото блюда', blank=True, null=True , upload_to='dishes/')
+    name = models.CharField(
+        max_length=150,
+        verbose_name='Название блюда'
+    )
+    description = models.TextField(
+        verbose_name='Описание блюда'
+    )
+    recipe = models.TextField(
+        verbose_name='Рецепт приготовления',
+        blank=True,
+        default=''
+    )
+    photo = models.ImageField(
+        verbose_name='Фото блюда',
+        blank=True,
+        null=True,
+        upload_to='dishes/'
+    )
     diet_type = models.ForeignKey(
         DietType,
         on_delete=models.SET_NULL,
@@ -141,7 +223,6 @@ class Dish(models.Model):
 
     @property
     def total_price(self):
-        """Считаем общую стоимость блюда"""
         return sum(
             di.quantity * di.ingredient.price
             for di in self.dishingredient_set.all()
@@ -159,8 +240,14 @@ class Dish(models.Model):
 
 
 class DishIngredient(models.Model):
-    dish = models.ForeignKey(Dish, on_delete=models.CASCADE)
-    ingredient = models.ForeignKey(Ingredient, on_delete=models.CASCADE)
+    dish = models.ForeignKey(
+        Dish,
+        on_delete=models.CASCADE
+    )
+    ingredient = models.ForeignKey(
+        Ingredient,
+        on_delete=models.CASCADE
+    )
     quantity = models.DecimalField(
         max_digits=10, decimal_places=2,
         verbose_name='Количество'

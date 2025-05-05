@@ -1,6 +1,12 @@
-from datetime import timedelta
+import json
+import logging
 import random
+import uuid
+from datetime import timedelta
 
+from yookassa import Configuration, Payment
+
+from django.conf import settings
 from django.contrib import messages
 from django.contrib.auth import (
     authenticate,
@@ -9,26 +15,288 @@ from django.contrib.auth import (
     logout,
 )
 from django.contrib.auth.decorators import login_required
-from django.contrib.auth.models import User
-from django.db.models import Q
 from django.shortcuts import (
     get_object_or_404,
     redirect,
     render,
 )
+from django.http import HttpResponse
 from django.utils import timezone
+from django.urls import reverse
 from django.views.decorators.http import require_POST
+from django.views.decorators.csrf import csrf_exempt
 
 from .forms import LoginForm, RegisterForm, UserProfileForm
-from .models import Allergy, DietType, Dish, UserProfile
+from .models import (
+    Allergy,
+    DietType,
+    Dish,
+    UserProfile,
+    SubscriptionOrder,
+)
+
+
+logger = logging.getLogger(__name__)
 
 
 User = get_user_model()
 
+Configuration.account_id = settings.YOOKASSA_SHOP_ID
+Configuration.secret_key = settings.YOOKASSA_SECRET_KEY
+
+duration_mapping = {
+    '0': '30',
+    '1': '90',
+    '2': '180',
+    '3': '365',
+}
+
+
+@csrf_exempt
+@login_required
+def create_payment(request):
+    if request.method != 'POST':
+        messages.error(request, "Неверный метод запроса")
+        return redirect('order')
+
+    required_fields = [
+        'foodtype',
+        'select1',
+        'select2',
+        'select3',
+        'select4',
+        'select5',
+        'duration',
+    ]
+    if not all(field in request.POST for field in required_fields):
+        messages.error(request, "Не все необходимые данные получены")
+        return redirect('order')
+
+    try:
+        duration = request.POST.get('duration', '0')
+        meal_count = sum(
+            1 for select in ['select1', 'select2', 'select3', 'select4']
+            if request.POST.get(select) == '0'
+        )
+
+        price_per_month = {'0': 1200, '1': 1000, '2': 700, '3': 500}.get(
+            duration, 1200
+        )
+        total_amount = price_per_month * meal_count
+        duration_days = int(duration_mapping.get(duration, '30'))
+
+        diet_type_name = {
+            'classic': 'Классическое',
+            'low': 'Низкоуглеводное',
+            'veg': 'Вегетарианское',
+            'keto': 'Кето',
+        }.get(request.POST.get('foodtype'), 'Неизвестный')
+
+        description = (
+            f"Подписка FoodPlan: {diet_type_name} меню, "
+            f"{duration_days} дней, {meal_count} приемов пищи"
+        )
+
+        order = SubscriptionOrder.objects.create(
+            user=request.user,
+            amount=total_amount,
+            description=description,
+            status='pending',
+            subscription_params={
+                'duration': duration,
+                'duration_days': duration_days,
+                'meal_count': meal_count,
+                'foodtype': request.POST.get('foodtype'),
+                'select1': request.POST.get('select1'),
+                'select2': request.POST.get('select2'),
+                'select3': request.POST.get('select3'),
+                'select4': request.POST.get('select4'),
+                'select5': request.POST.get('select5'),
+                **{
+                    f'allergy{i}': request.POST.get(f'allergy{i}', '0')
+                    for i in range(1, 7)
+                },
+            },
+        )
+
+        payment = Payment.create(
+            {
+                "amount": {
+                    "value": f"{total_amount:.2f}",
+                    "currency": "RUB",
+                },
+                "confirmation": {
+                    "type": "redirect",
+                    "return_url": request.build_absolute_uri(
+                        reverse('payment_success') + f"?order_id={order.id}"
+                    ),
+                },
+                "capture": True,
+                "description": description,
+                "metadata": {
+                    "order_id": order.id,
+                    "user_id": request.user.id,
+                    "subscription_type": "foodplan",
+                },
+            },
+            str(uuid.uuid4()),
+        )
+
+        order.payment_id = payment.id
+        order.save()
+
+        logger.info(
+            f"Created payment for order #{order.id}. "
+            f"Amount: {total_amount}, user: {request.user.username}"
+        )
+
+        return redirect(payment.confirmation.confirmation_url)
+
+    except Exception as e:
+        logger.error(f"Error creating payment: {str(e)}", exc_info=True)
+        messages.error(
+            request,
+            "Произошла ошибка при создании платежа. Пожалуйста, попробуйте позже.",
+        )
+        return redirect('order')
+
+
+@csrf_exempt
+@login_required
+def payment_success(request):
+    order_id = request.GET.get('order_id')
+    if not order_id:
+        messages.error(request, "Не получен ID заказа")
+        return redirect('order')
+
+    try:
+        order = SubscriptionOrder.objects.get(id=order_id)
+
+        if order.status == 'paid':
+            messages.success(request, "Подписка уже активирована!")
+            return redirect('lk')
+
+        payment = Payment.find_one(order.payment_id)
+
+        if payment.status == 'succeeded':
+            if activate_subscription(order, payment):
+                messages.success(request, "Подписка успешно оформлена!")
+            else:
+                messages.error(request, "Ошибка активации подписки")
+            return redirect('lk')
+        elif payment.status == 'waiting_for_capture':
+            messages.info(request, "Платеж ожидает подтверждения")
+            return redirect('lk')
+        else:
+            messages.error(
+                request, f"Платеж не прошел. Статус: {payment.status}"
+            )
+            return redirect('order')
+
+    except Exception as e:
+        logger.error(f"Payment success error: {str(e)}", exc_info=True)
+        messages.error(request, "Ошибка при обработке платежа")
+        return redirect('order')
+
+
+@csrf_exempt
+def yookassa_webhook(request):
+    if request.method == 'POST':
+        event_json = json.loads(request.body)
+        payment_id = event_json['object']['id']
+
+        try:
+            payment = Payment.find_one(payment_id)
+            order = SubscriptionOrder.objects.get(payment_id=payment_id)
+
+            if payment.status == 'succeeded' and order.status != 'paid':
+                activate_subscription(order.user, order)
+                order.status = 'paid'
+                order.save()
+
+        except Exception as e:
+            logger.error(f"Webhook error: {str(e)}")
+
+    return HttpResponse(status=200)
+
+
+def activate_subscription(order, payment):
+    try:
+        profile = order.user.userprofile
+        sub_params = order.subscription_params
+
+        profile.breakfast = sub_params.get('select1') == '0'
+        profile.lunch = sub_params.get('select2') == '0'
+        profile.dinner = sub_params.get('select3') == '0'
+        profile.dessert = sub_params.get('select4') == '0'
+
+        persons_mapping = {'0': 1, '1': 2, '2': 3, '3': 4, '4': 5, '5': 6}
+        profile.count_of_persons = persons_mapping.get(
+            sub_params.get('select5', '0'), 1
+        )
+
+        diet_type_name = {
+            'classic': 'Классическое',
+            'low': 'Низкоуглеводное',
+            'veg': 'Вегетарианское',
+            'keto': 'Кето',
+        }.get(sub_params.get('foodtype'))
+
+        if diet_type_name:
+            diet_type, _ = DietType.objects.get_or_create(name=diet_type_name)
+            profile.diet_type = diet_type
+
+        allergy_map = {
+            'allergy1': 'Рыба и морепродукты',
+            'allergy2': 'Мясо',
+            'allergy3': 'Зерновые',
+            'allergy4': 'Продукты пчеловодства',
+            'allergy5': 'Орехи и бобовые',
+            'allergy6': 'Молочные продукты',
+        }
+
+        profile.allergies.clear()
+        for key, name in allergy_map.items():
+            if sub_params.get(key) == '1':
+                allergy, _ = Allergy.objects.get_or_create(name=name)
+                profile.allergies.add(allergy)
+
+        duration_days = int(sub_params.get('duration_days', 30))
+        profile.subscription_end_date = timezone.now().date() + timedelta(
+            days=duration_days
+        )
+
+        profile.active_subscription = order
+        profile.save()
+
+        order.status = 'paid'
+        order.payment_data = {
+            'id': payment.id,
+            'status': payment.status,
+            'paid': payment.paid,
+            'amount': payment.amount.value,
+            'currency': payment.amount.currency,
+            'created_at': payment.created_at,
+        }
+        order.save()
+
+        logger.info(
+            f"Subscription activated for user {order.user.username}, "
+            f"order #{order.id}"
+        )
+        return True
+
+    except Exception as e:
+        logger.error(
+            f"Subscription activation failed for order #{order.id}: {str(e)}",
+            exc_info=True,
+        )
+        return False
+
 
 def index(request):
     context = {
-        'current_date': timezone.now().date()
+        'current_date': timezone.now().date(),
     }
     return render(request, 'index.html', context)
 
@@ -50,14 +318,13 @@ def dish_card(request, dish_id):
     ingredients = dish.dishingredient_set.all()
     profile = request.user.userprofile
 
-    # Умножаем количество каждого ингредиента на количество персон
     adjusted_ingredients = []
     for ingredient in ingredients:
         adjusted_quantity = float(ingredient.quantity) * profile.count_of_persons
         adjusted_ingredients.append({
             'ingredient': ingredient.ingredient,
             'quantity': adjusted_quantity,
-            'unit': ingredient.ingredient.get_unit_display()
+            'unit': ingredient.ingredient.get_unit_display(),
         })
 
     context = {
@@ -78,7 +345,10 @@ def lk_view(request):
         return redirect('index')
 
     # Проверка активности подписки
-    subscription_active = profile.subscription_end_date and profile.subscription_end_date >= timezone.now().date()
+    subscription_active = (
+        profile.subscription_end_date
+        and profile.subscription_end_date >= timezone.now().date()
+    )
     dishes_by_category = {}
 
     if subscription_active and profile.diet_type:
@@ -96,7 +366,7 @@ def lk_view(request):
         if categories:
             dishes = Dish.objects.filter(
                 diet_type=profile.diet_type,
-                category__in=categories
+                category__in=categories,
             ).distinct()
 
             if profile.allergies.exists():
@@ -104,7 +374,6 @@ def lk_view(request):
                     ingredients__allergens__in=profile.allergies.all()
                 ).distinct()
 
-            # Рассчитываем стоимость с учетом количества персон
             adjusted_dishes = []
             for dish in dishes:
                 dish.adjusted_price = dish.total_price * profile.count_of_persons
@@ -112,12 +381,16 @@ def lk_view(request):
                 adjusted_dishes.append(dish)
 
             if profile.budget_limit:
-                adjusted_dishes = [dish for dish in adjusted_dishes
-                                   if dish.adjusted_price <= profile.budget_limit]
+                adjusted_dishes = [
+                    dish
+                    for dish in adjusted_dishes
+                    if dish.adjusted_price <= profile.budget_limit
+                ]
 
-            # Группируем блюда по категориям
             for category in categories:
-                category_dishes = [d for d in adjusted_dishes if d.category == category]
+                category_dishes = [
+                    d for d in adjusted_dishes if d.category == category
+                ]
                 dishes_by_category[f"{category}_dishes"] = category_dishes
 
     form = UserProfileForm(instance=profile, user=user)
@@ -127,7 +400,7 @@ def lk_view(request):
         'profile': profile,
         'user': user,
         'subscription_active': subscription_active,
-        **dishes_by_category
+        **dishes_by_category,
     }
 
     return render(request, 'lk.html', context)
@@ -163,10 +436,14 @@ def auth_view(request):
         form = LoginForm()
 
     next_url = request.GET.get('next', '')
-    return render(request, 'auth.html', {
-        'form': form,
-        'next': next_url
-    })
+    return render(
+        request,
+        'auth.html',
+        {
+            'form': form,
+            'next': next_url,
+        },
+    )
 
 
 def register_view(request):
@@ -186,7 +463,7 @@ def register_view(request):
                 breakfast=True,
                 lunch=True,
                 dinner=True,
-                dessert=False
+                dessert=False,
             )
 
             login(request, user)
@@ -213,7 +490,9 @@ def update_profile(request):
     user = request.user
     profile = user.userprofile
 
-    form = UserProfileForm(request.POST, request.FILES, instance=profile, user=user)
+    form = UserProfileForm(
+        request.POST, request.FILES, instance=profile, user=user
+    )
     if form.is_valid():
         form.save()
         messages.success(request, 'Профиль обновлён!')
@@ -233,62 +512,4 @@ def update_avatar(request):
         messages.success(request, 'Аватар успешно обновлен!')
     else:
         messages.error(request, 'Не удалось загрузить аватар')
-    return redirect('lk')
-
-
-@login_required
-@require_POST
-def process_order(request):
-    user = request.user
-    profile = user.userprofile
-
-    # Обновляем параметры подписки
-    profile.breakfast = request.POST.get('select1') == '0'
-    profile.lunch = request.POST.get('select2') == '0'
-    profile.dinner = request.POST.get('select3') == '0'
-    profile.dessert = request.POST.get('select4') == '0'
-
-    # Обновляем количество персон
-    persons_mapping = {'0': 1, '1': 2, '2': 3, '3': 4, '4': 5, '5': 6}
-    profile.count_of_persons = persons_mapping.get(request.POST.get('select5', '0'), 1)
-
-    # Обновляем тип диеты
-    diet_type_name = {
-        'classic': 'Классическое',
-        'low': 'Низкоуглеводное',
-        'veg': 'Вегетарианское',
-        'keto': 'Кето'
-    }.get(request.POST.get('foodtype'))
-
-    if diet_type_name:
-        profile.diet_type = DietType.objects.get(name=diet_type_name)
-
-    # Обновляем аллергии
-    profile.allergies.clear()
-    allergy_map = {
-        'allergy1': 'Рыба и морепродукты',
-        'allergy2': 'Мясо',
-        'allergy3': 'Зерновые',
-        'allergy4': 'Продукты пчеловодства',
-        'allergy5': 'Орехи и бобовые',
-        'allergy6': 'Молочные продукты'
-    }
-
-    for field, allergy_name in allergy_map.items():
-        if field in request.POST:
-            allergy, created = Allergy.objects.get_or_create(name=allergy_name)
-            profile.allergies.add(allergy)
-
-    # Устанавливаем дату окончания подписки в зависимости от выбранного срока
-    duration_mapping = {
-        '0': 30,  # 1 месяц
-        '1': 90,  # 3 месяца
-        '2': 180,  # 6 месяцев
-        '3': 365  # 12 месяцев
-    }
-    duration_days = duration_mapping.get(request.POST.get('duration', '0'), 30)
-    profile.subscription_end_date = timezone.now().date() + timedelta(days=duration_days)
-    profile.save()
-
-    messages.success(request, "Подписка оформлена успешно!")
     return redirect('lk')

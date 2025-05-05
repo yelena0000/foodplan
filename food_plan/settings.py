@@ -1,16 +1,21 @@
 import os
 from pathlib import Path
 
+from environs import Env
+
+
+env = Env()
+env.read_env()
+
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
 
-SECRET_KEY = 'django-insecure-fau8u(k&l4ie5n&&3+$wj+gx8b246+$bkbh+7$jk4qbrgqllk#'
+SECRET_KEY = env.str('SECRET_KEY')
 
+DEBUG = env.bool('DEBUG', False)
 
-DEBUG = True
-
-ALLOWED_HOSTS = []
+ALLOWED_HOSTS = env.list('ALLOWED_HOSTS', default=[])
 
 
 
@@ -101,6 +106,8 @@ USE_TZ = True
 STATIC_URL = '/static/'
 STATICFILES_DIRS = [os.path.join(BASE_DIR, 'static')]
 
+STATIC_ROOT = os.path.join(BASE_DIR, 'staticfiles')
+
 MEDIA_URL = '/media/'
 MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 
@@ -108,6 +115,19 @@ MEDIA_ROOT = os.path.join(BASE_DIR, 'media')
 DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 
 
-SESSION_COOKIE_SECURE = False  # Для разработки можно False, для продакшена True
+SESSION_COOKIE_SECURE = True
 SESSION_COOKIE_HTTPONLY = True
-CSRF_COOKIE_SECURE = False  # Для разработки можно False, для продакшена True
+CSRF_COOKIE_SECURE = True
+CSRF_USE_SESSIONS = True
+
+
+YOOKASSA_SHOP_ID = env.str('YOOKASSA_SHOP_ID')
+YOOKASSA_SECRET_KEY = env.str('YOOKASSA_SECRET_KEY')
+YOOKASSA_REDIRECT_URI = 'https://yelena0000.pythonanywhere.com/yoomoney/callback/'
+YOOKASSA_RETURN_URL = 'https://yelena0000.pythonanywhere.com/payment/success/'
+
+CSRF_TRUSTED_ORIGINS = [
+    'https://yelena0000.pythonanywhere.com/',
+    'https://secure.yookassa.ru/',
+    'https://yookassa.ru/',
+]
